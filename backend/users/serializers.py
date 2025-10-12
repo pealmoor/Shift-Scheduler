@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.hashers import make_password
+from django.contrib.auth import authenticate
+from rest_framework import serializers
 from .models import User
 from .validators import validate_password_strength
 
@@ -33,3 +35,24 @@ class UserPublicSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ("id","first_name","last_name","telefono","email","role","status")
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        email = attrs.get("email")
+        password = attrs.get("password")
+
+        user = authenticate(request=self.context.get("request"), email=email, password=password)
+        if not user:
+            # 401 credenciales inválidas
+            raise serializers.ValidationError({"detail": "Credenciales inválidas."})
+
+        # Reglas por estado del usuario
+        if not user.is_active or user.status in ("BLOCKED", "INACTIVE"):
+            # 403 estado no permitido
+            raise serializers.ValidationError({"detail": "Usuario no autorizado. Verifica tu estado."})
+
+        attrs["user"] = user
+        return attrs
