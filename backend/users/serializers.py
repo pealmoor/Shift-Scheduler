@@ -9,7 +9,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id","first_name","last_name","email","password","password_confirm","role")
+        fields = ("id","first_name","last_name","telefono","email","password","password_confirm","role")
         read_only_fields = ("id",)
 
     def validate_email(self, value):
@@ -32,4 +32,4 @@ class RegisterSerializer(serializers.ModelSerializer):
 class UserPublicSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id","first_name","last_name","email","role","status")
+        fields = ("id","first_name","last_name","telefono","email","role","status")
