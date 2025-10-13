@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+from django.conf import settings
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -145,3 +146,16 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+
+
+# Token de reset expira en 24h
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24  # 86400 segundos
+
+# Email (desarrollo)
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+DEFAULT_FROM_EMAIL = "no-reply@shift-scheduler.local"
+
+PASSWORD_RESET_CONFIRM_FRONTEND_URL = os.getenv(
+    "PASSWORD_RESET_CONFIRM_FRONTEND_URL", ""  # p.ej. "http://localhost:5173/reset"
+)

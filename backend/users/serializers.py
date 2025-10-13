@@ -1,6 +1,11 @@
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_str, smart_bytes
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import authenticate
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from rest_framework import serializers
 from .models import User
 from .validators import validate_password_strength
@@ -56,3 +61,47 @@ class LoginSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
+
+User = get_user_model()
+token_generator = PasswordResetTokenGenerator()
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        try:
+            user = User.objects.get(email__iexact=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Correo no registrado.")
+        self.context["user"] = user
+        return value
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(write_only=True)
+    new_password_confirm = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        if attrs["new_password"] != attrs["new_password_confirm"]:
+            raise serializers.ValidationError({"new_password_confirm": "Las contraseñas no coinciden."})
+        # validación de política de contraseña
+        validate_password(attrs["new_password"])
+        return attrs
+
+    def validate_uid(self, value):
+        try:
+            uid = force_str(urlsafe_base64_decode(value))
+            user = User.objects.get(pk=uid)
+        except Exception:
+            raise serializers.ValidationError("UID inválido.")
+        self.context["user"] = user
+        return value
+
+    def validate_token(self, value):
+        # el user se coloca en validate_uid
+        user = self.context.get("user")
+        if not user or not token_generator.check_token(user, value):
+            raise serializers.ValidationError("Token inválido o expirado.")
+        return value
