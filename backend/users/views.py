@@ -1,16 +1,16 @@
 import time
+from .models import User
 from django.conf import settings
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import smart_bytes
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
-
-from rest_framework import status, permissions
+from rest_framework import status, permissions, generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import LoginSerializer, RegisterSerializer, UserPublicSerializer
+from .serializers import LoginSerializer, RegisterSerializer, UserPublicSerializer, AdminCreateUserSerializer
 
 class RegisterView(APIView):
     authentication_classes = []
@@ -120,3 +120,35 @@ class PasswordResetConfirmView(APIView):
         user.set_password(new_pw)
         user.save()
         return Response({"message": "Contraseña actualizada correctamente."}, status=200)
+
+class AdminCreateUserView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = AdminCreateUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        # Solo roles con permiso
+        if request.user.role not in ["ADMIN", "GERENTE"]:
+            return Response({"detail": "No tienes permiso para crear usuarios."}, status=403)
+        
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        user = serializer.save()
+        return Response(
+            {
+                "message": "Usuario creado con éxito.",
+                "user": {
+                    "id": user.id,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "telefono": user.telefono,
+                    "email": user.email,
+                    "role": user.role,
+                    "status": user.status
+                }
+            },
+            status=status.HTTP_201_CREATED
+        )
+

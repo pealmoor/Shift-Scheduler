@@ -105,3 +105,28 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         if not user or not token_generator.check_token(user, value):
             raise serializers.ValidationError("Token inválido o expirado.")
         return value
+    
+class AdminCreateUserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True)
+    password_confirm = serializers.CharField(write_only=True, required=True)
+
+    class Meta:
+        model = User
+        fields = (
+            "id", "first_name", "last_name", "telefono",
+            "email", "password", "password_confirm",
+            "role", "status"
+        )
+
+    def validate(self, data):
+        if data["password"] != data["password_confirm"]:
+            raise serializers.ValidationError({"password_confirm": "Las contraseñas no coinciden."})
+        if User.objects.filter(email__iexact=data["email"]).exists():
+            raise serializers.ValidationError({"email": "El correo ya está registrado."})
+        return data
+
+    def create(self, validated_data):
+        validated_data.pop("password_confirm")
+        validated_data["password"] = make_password(validated_data["password"])
+        user = User.objects.create(**validated_data)
+        return user
