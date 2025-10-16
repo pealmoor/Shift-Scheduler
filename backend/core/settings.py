@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    'rest_framework_simplejwt',
     "corsheaders",
     "users",
 ]
@@ -145,7 +146,9 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "AUTH_HEADER_TYPES": ("Bearer",),
+    'ROTATE_REFRESH_TOKENS': True,
 }
+
 
 
 # Token de reset expira en 24h
@@ -159,3 +162,14 @@ DEFAULT_FROM_EMAIL = "no-reply@shift-scheduler.local"
 PASSWORD_RESET_CONFIRM_FRONTEND_URL = os.getenv(
     "PASSWORD_RESET_CONFIRM_FRONTEND_URL", ""  # p.ej. "http://localhost:5173/reset"
 )
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:4000",
+    "http://localhost:5173",  # Vite default
+    
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+# Si necesitas permitir todos los orígenes en desarrollo:
+CORS_ALLOW_ALL_ORIGINS = True  
