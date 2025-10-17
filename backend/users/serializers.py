@@ -6,6 +6,7 @@ from django.utils.encoding import force_str, smart_bytes
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
+
 from rest_framework import serializers
 from .models import User
 from .validators import validate_password_strength
@@ -130,3 +131,24 @@ class AdminCreateUserSerializer(serializers.ModelSerializer):
         validated_data["password"] = make_password(validated_data["password"])
         user = User.objects.create(**validated_data)
         return user
+
+class AdminUpdateUserSerializer(serializers.ModelSerializer):
+    telefono = serializers.CharField(required=False, allow_blank=True, max_length=15)
+    email = serializers.EmailField(required=False)
+
+    class Meta:
+        model = User
+        fields = ("id", "first_name", "last_name", "telefono", "email", "role", "status")
+
+    def validate_email(self, value):
+        # Si no se envía email en el PATCH, no validamos
+        if value in (None, ""):
+            return value
+
+        # Validar duplicado case-insensitive excluyendo el propio registro
+        qs = User.objects.filter(email__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("El correo ya está registrado.")
+        return value

@@ -10,7 +10,7 @@ from rest_framework import status, permissions, generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import LoginSerializer, RegisterSerializer, UserPublicSerializer, AdminCreateUserSerializer
+from .serializers import LoginSerializer, RegisterSerializer, UserPublicSerializer, AdminCreateUserSerializer,AdminUpdateUserSerializer
 
 class RegisterView(APIView):
     authentication_classes = []
@@ -152,3 +152,42 @@ class AdminCreateUserView(generics.CreateAPIView):
             status=status.HTTP_201_CREATED
         )
 
+class AdminUpdateUserView(generics.UpdateAPIView):
+    """
+    PATCH /api/auth/users/<id>   -> actualización parcial
+    PUT   /api/auth/users/<id>   -> actualización total
+    Solo roles ADMIN o GERENTE.
+    """
+    queryset = User.objects.all()
+    serializer_class = AdminUpdateUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "pk"
+
+    def update(self, request, *args, **kwargs):
+        # ✅ Autorización por rol
+        if request.user.role not in ["ADMIN", "GERENTE"]:
+            return Response({"detail": "No tienes permiso para editar usuarios."}, status=403)
+
+        partial = request.method.lower() == "patch"
+        instance = self.get_object()
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        user = serializer.instance
+        return Response(
+            {
+                "message": "Usuario actualizado con éxito.",
+                "user": {
+                    "id": user.id,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "telefono": user.telefono,
+                    "email": user.email,
+                    "role": user.role,
+                    "status": user.status,
+                },
+            },
+            status=200,
+        )
