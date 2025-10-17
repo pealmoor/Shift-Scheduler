@@ -5,12 +5,13 @@ from django.core.cache import cache
 from django.core.mail import send_mail
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import smart_bytes
+from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from rest_framework import status, permissions, generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import LoginSerializer, RegisterSerializer, UserPublicSerializer, AdminCreateUserSerializer,AdminUpdateUserSerializer
+from .serializers import LoginSerializer, RegisterSerializer, UserPublicSerializer, AdminCreateUserSerializer,AdminUpdateUserSerializer, AssignRolePermsSerializer
 
 class RegisterView(APIView):
     authentication_classes = []
@@ -191,3 +192,162 @@ class AdminUpdateUserView(generics.UpdateAPIView):
             },
             status=200,
         )
+
+class AdminDeleteUserView(generics.DestroyAPIView):
+    queryset = User.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "pk"
+
+    def delete(self, request, *args, **kwargs):
+        # Solo ADMIN/GERENTE
+        if request.user.role not in ["ADMIN", "GERENTE"]:
+            return Response({"detail": "No tienes permiso para eliminar usuarios."}, status=403)
+
+        instance = self.get_object()
+
+        # Seguridad: no eliminarse a sí mismo
+        if instance.pk == request.user.pk:
+            return Response({"detail": "No puedes eliminar tu propio usuario."}, status=400)
+
+        self.perform_destroy(instance)
+        return Response({"message": "Usuario eliminado con éxito."}, status=200)
+    
+class AdminUserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET    /api/auth/users/<id>   -> ver detalle (si lo quieres)
+    PUT    /api/auth/users/<id>   -> actualizar completo
+    PATCH  /api/auth/users/<id>   -> actualizar parcial
+    DELETE /api/auth/users/<id>   -> eliminar
+    Solo roles ADMIN o GERENTE.
+    """
+    queryset = User.objects.all()
+    serializer_class = AdminUpdateUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "pk"
+
+    def _check_role(self, request):
+        return request.user.role in ["ADMIN", "GERENTE"]
+
+    # PUT/PATCH
+    def update(self, request, *args, **kwargs):
+        if not self._check_role(request):
+            return Response({"detail": "No tienes permiso para editar usuarios."}, status=403)
+
+        partial = request.method.lower() == "patch"
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        user = serializer.instance
+        return Response({
+            "message": "Usuario actualizado con éxito.",
+            "user": {
+                "id": user.id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "telefono": user.telefono,
+                "email": user.email,
+                "role": user.role,
+                "status": user.status,
+            }
+        }, status=200)
+
+    # DELETE
+    def destroy(self, request, *args, **kwargs):
+        if not self._check_role(request):
+            return Response({"detail": "No tienes permiso para eliminar usuarios."}, status=403)
+
+        instance = self.get_object()
+        if instance.pk == request.user.pk:
+            return Response({"detail": "No puedes eliminar tu propio usuario."}, status=400)
+
+        self.perform_destroy(instance)
+        return Response({"message": "Usuario eliminado con éxito."}, status=200)
+
+class AdminBlockUserView(APIView):
+    """
+    PUT /api/auth/users/<id>/block
+    Cambia el estado del usuario a 'BLOQUEADO'.
+    Solo ADMIN o GERENTE.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request, pk):
+        # Solo ADMIN/GERENTE pueden bloquear
+        if request.user.role not in ["ADMIN", "GERENTE"]:
+            return Response({"detail": "No tienes permiso para bloquear usuarios."}, status=403)
+
+        try:
+            user = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({"detail": "Usuario no encontrado."}, status=404)
+
+        # No puede bloquearse a sí mismo
+        if user.pk == request.user.pk:
+            return Response({"detail": "No puedes bloquear tu propio usuario."}, status=400)
+
+        # Verificar si ya está bloqueado
+        if user.status == "BLOQUEADO":
+            return Response({"message": "El usuario ya está bloqueado."}, status=400)
+
+        # Bloquear usuario
+        user.status = "BLOQUEADO"
+        user.is_active = False
+        user.save(update_fields=["status", "is_active"])
+
+        # (Opcional) registrar auditoría
+        print(f"[AUDITORÍA] {request.user.email} bloqueó al usuario {user.email}")
+
+        return Response({"message": "Usuario bloqueado con éxito."}, status=200)
+
+
+User = get_user_model()
+
+class AdminUserAccessView(APIView):
+    """
+    GET /api/auth/users/<id>/access  -> Obtiene rol + permisos
+    PUT /api/auth/users/<id>/access  -> Asigna rol + permisos
+    Solo ADMIN o GERENTE.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        if request.user.role not in ["ADMIN", "GERENTE"]:
+            return Response({"detail": "No tienes permiso para ver acceso."}, status=403)
+        user = self.get_object(pk)
+        if not user:
+            return Response({"detail": "Usuario no encontrado."}, status=404)
+        return Response({
+            "id": user.id,
+            "email": user.email,
+            "role": user.role,
+            "permissions": user.permissions or []
+        }, status=200)
+
+    def put(self, request, pk):
+        if request.user.role not in ["ADMIN", "GERENTE"]:
+            return Response({"detail": "No tienes permiso para asignar roles/permisos."}, status=403)
+        user = self.get_object(pk)
+        if not user:
+            return Response({"detail": "Usuario no encontrado."}, status=404)
+
+        ser = AssignRolePermsSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        ser.update(user, ser.validated_data)
+
+        return Response({
+            "message": "Acceso actualizado con éxito.",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role,
+                "permissions": user.permissions or []
+            }
+        }, status=200)

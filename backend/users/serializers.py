@@ -64,7 +64,42 @@ class LoginSerializer(serializers.Serializer):
         return attrs
 
 User = get_user_model()
+
 token_generator = PasswordResetTokenGenerator()
+
+ALLOWED_ROLES = {"ADMIN", "GERENTE", "EMPLEADO"}
+ALLOWED_PERMS = {"ver", "crear", "editar", "eliminar", "aprobar"}
+
+class AssignRolePermsSerializer(serializers.Serializer):
+    role = serializers.CharField(required=True)
+    permissions = serializers.ListField(
+        child=serializers.CharField(), allow_empty=True, required=True
+    )
+
+    def validate_role(self, value):
+        if value not in ALLOWED_ROLES:
+            raise serializers.ValidationError("Rol inválido. Use: ADMIN, GERENTE, EMPLEADO.")
+        return value
+
+    def validate_permissions(self, perms):
+        invalid = [p for p in perms if p not in ALLOWED_PERMS]
+        if invalid:
+            # 👇 Criterio de aceptación: “Permiso no permitido”
+            raise serializers.ValidationError([f"Permiso no permitido: {p}" for p in invalid])
+        # Quitar duplicados manteniendo el orden
+        seen = set()
+        cleaned = []
+        for p in perms:
+            if p not in seen:
+                seen.add(p)
+                cleaned.append(p)
+        return cleaned
+
+    def update(self, instance, validated_data):
+        instance.role = validated_data["role"]
+        instance.permissions = validated_data["permissions"]
+        instance.save(update_fields=["role", "permissions"])
+        return instance
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -152,3 +187,4 @@ class AdminUpdateUserSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("El correo ya está registrado.")
         return value
+

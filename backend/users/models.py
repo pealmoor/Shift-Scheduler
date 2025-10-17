@@ -46,6 +46,8 @@ class User(AbstractUser):
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.EMPLEADO)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
 
+    permissions = models.JSONField(default=list, blank=True)
+    
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["first_name", "last_name"]
 
